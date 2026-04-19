@@ -1,7 +1,79 @@
+import math
 import tkinter as tk
+from dataclasses import dataclass
 from tkinter import ttk
 
 from state import AppState
+
+ISO_PORTRAIT_WIDTH = 1.0
+ISO_PORTRAIT_HEIGHT = math.sqrt(2)
+ISO_PORTRAIT_RATIO = ISO_PORTRAIT_WIDTH / ISO_PORTRAIT_HEIGHT
+
+
+@dataclass(frozen=True)
+class NormalizedSquareLayout:
+    x: float
+    y: float
+    side: float
+
+
+@dataclass(frozen=True)
+class FittedPage:
+    x: float
+    y: float
+    width: float
+    height: float
+    short_side: float
+
+
+def validate_margin_ratio(margin_ratio: float) -> None:
+    if not 0 <= margin_ratio < 0.5:
+        raise ValueError("margin_ratio must satisfy 0 <= margin_ratio < 0.5")
+
+
+def build_square_layout(margin_ratio: float) -> NormalizedSquareLayout:
+    validate_margin_ratio(margin_ratio)
+    side = ISO_PORTRAIT_WIDTH - (2 * margin_ratio)
+    return NormalizedSquareLayout(x=margin_ratio, y=margin_ratio, side=side)
+
+
+def fit_iso_portrait_page(
+    output_width: float,
+    output_height: float,
+    padding: float = 0.0,
+) -> FittedPage:
+    if output_width <= 0 or output_height <= 0:
+        raise ValueError("output size must be positive")
+    if padding < 0:
+        raise ValueError("padding must be non-negative")
+
+    drawable_width = max(output_width - (2 * padding), 1.0)
+    drawable_height = max(output_height - (2 * padding), 1.0)
+
+    fitted_width = min(drawable_width, drawable_height * ISO_PORTRAIT_RATIO)
+    fitted_height = fitted_width / ISO_PORTRAIT_RATIO
+
+    x = (output_width - fitted_width) / 2
+    y = (output_height - fitted_height) / 2
+    return FittedPage(
+        x=x,
+        y=y,
+        width=fitted_width,
+        height=fitted_height,
+        short_side=fitted_width,
+    )
+
+
+def normalized_square_to_output(
+    square: NormalizedSquareLayout,
+    page: FittedPage,
+) -> tuple[float, float, float, float]:
+    x1 = page.x + (square.x * page.short_side)
+    y1 = page.y + (square.y * page.short_side)
+    side_px = square.side * page.short_side
+    x2 = x1 + side_px
+    y2 = y1 + side_px
+    return x1, y1, x2, y2
 
 
 class StylePanel:
@@ -15,6 +87,7 @@ class StylePanel:
         self.state = state
         self.bind_mousewheel_recursive = bind_mousewheel_recursive
         self.border_controls_frame: ttk.Frame | None = None
+        self.margin_ratio_value_var = tk.StringVar(value=f"{self.state.margin_ratio_var.get():.2f}")
         self.gradient_palette_frame: ttk.Frame | None = None
 
     def build(self, row: int) -> ttk.LabelFrame:
@@ -76,16 +149,36 @@ class StylePanel:
             state="readonly",
         ).grid(row=3, column=1, sticky="ew", padx=(10, 0), pady=4)
 
+        ttk.Label(frame, text="Cover margin ratio").grid(row=4, column=0, sticky="w", pady=4)
+        margin_controls = ttk.Frame(frame)
+        margin_controls.grid(row=4, column=1, sticky="ew", padx=(10, 0), pady=4)
+        margin_controls.columnconfigure(0, weight=1)
+
+        ttk.Scale(
+            margin_controls,
+            from_=0.0,
+            to=0.49,
+            variable=self.state.margin_ratio_var,
+            orient="horizontal",
+            command=self._on_margin_ratio_change,
+        ).grid(row=0, column=0, sticky="ew")
+
+        ttk.Label(
+            margin_controls,
+            textvariable=self.margin_ratio_value_var,
+            width=5,
+        ).grid(row=0, column=1, padx=(8, 0))
+
         ttk.Checkbutton(
             frame,
             text="Album cover color gradient",
             variable=self.state.gradient_var,
             command=self._toggle_gradient_palette,
-        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(10, 4))
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(10, 4))
 
         self.gradient_palette_frame = ttk.Frame(frame)
         self.gradient_palette_frame.grid(
-            row=5, column=0, columnspan=2, sticky="w", padx=(24, 0), pady=(0, 8)
+            row=6, column=0, columnspan=2, sticky="w", padx=(24, 0), pady=(0, 8)
         )
 
         for index, color in enumerate(["#2c3e50", "#8e44ad", "#c0392b", "#f39c12", "#ecf0f1"]):
@@ -100,9 +193,21 @@ class StylePanel:
             swatch.grid(row=0, column=index, padx=3)
 
         self._toggle_border_controls()
+        self._on_margin_ratio_change(str(self.state.margin_ratio_var.get()))
         self._toggle_gradient_palette()
         self.bind_mousewheel_recursive(frame)
         return frame
+
+    def _on_margin_ratio_change(self, value: str) -> None:
+        try:
+            ratio = float(value)
+            validate_margin_ratio(ratio)
+            normalized_square = build_square_layout(ratio)
+            self.margin_ratio_value_var.set(f"{normalized_square.x:.2f}")
+        except (ValueError, tk.TclError):
+            fallback = 0.12
+            self.state.margin_ratio_var.set(fallback)
+            self.margin_ratio_value_var.set(f"{fallback:.2f}")
 
     def _toggle_border_controls(self) -> None:
         if self.border_controls_frame is None:

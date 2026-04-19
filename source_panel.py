@@ -1,3 +1,4 @@
+from tkinter import filedialog
 from tkinter import ttk
 
 from state import AppState
@@ -19,7 +20,7 @@ class SourcePanel:
         frame.grid(row=row, column=0, sticky="ew", pady=8)
         frame.columnconfigure(1, weight=1)
 
-        ttk.Button(frame, text="Upload cover").grid(
+        ttk.Button(frame, text="Upload cover", command=self._upload_cover).grid(
             row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8)
         )
 
@@ -32,4 +33,18 @@ class SourcePanel:
 
         self.bind_mousewheel_recursive(frame)
         return frame
+
+    def _upload_cover(self) -> None:
+        selected_path = filedialog.askopenfilename(
+            title="Select album cover",
+            filetypes=[
+                (
+                    "Image files",
+                    "*.png *.jpg *.jpeg *.bmp *.gif *.tif *.tiff *.webp *.ico *.ppm *.pgm",
+                ),
+                ("All files", "*.*"),
+            ],
+        )
+        if selected_path:
+            self.state.cover_image_path_var.set(selected_path)
 

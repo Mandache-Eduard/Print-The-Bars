@@ -26,8 +26,8 @@ class ContentPanel:
 
         ttk.Checkbutton(
             frame,
-            text="Show music genre",
-            variable=self.state.show_genre_var,
+            text="Show release date",
+            variable=self.state.show_release_date_var,
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=3)
 
         ttk.Checkbutton(
@@ -61,19 +61,19 @@ class ContentPanel:
 
         ttk.Checkbutton(
             frame,
-            text="Certifications",
+            text="Show certifications",
             variable=self.state.show_certifications_var,
             command=self._toggle_certifications_entry,
-        ).grid(row=4, column=0, sticky="w", pady=3)
+        ).grid(row=5, column=0, sticky="w", pady=3)
 
         self.certifications_entry = ttk.Entry(
             frame,
             textvariable=self.state.certifications_link_var,
         )
-        self.certifications_entry.grid(row=4, column=1, sticky="ew", padx=(10, 0), pady=3)
+        self.certifications_entry.grid(row=5, column=1, sticky="ew", padx=(10, 0), pady=3)
 
         ttk.Label(frame, text="Funny message").grid(
-            row=5, column=0, sticky="w", pady=(10, 4)
+            row=6, column=0, sticky="w", pady=(10, 4)
         )
 
         message_menu = ttk.Combobox(
@@ -89,7 +89,7 @@ class ContentPanel:
             ],
             state="readonly",
         )
-        message_menu.grid(row=5, column=1, sticky="ew", padx=(10, 0), pady=(10, 4))
+        message_menu.grid(row=6, column=1, sticky="ew", padx=(10, 0), pady=(10, 4))
         message_menu.bind("<<ComboboxSelected>>", self._on_message_selected)
 
         self.custom_message_label = ttk.Label(frame, text="Custom text")
@@ -123,8 +123,8 @@ class ContentPanel:
         if self.custom_message_label is None or self.custom_message_entry is None:
             return
         if self.state.message_var.get() == "Custom":
-            self.custom_message_label.grid(row=6, column=0, sticky="w", pady=4)
-            self.custom_message_entry.grid(row=6, column=1, sticky="ew", padx=(10, 0), pady=4)
+            self.custom_message_label.grid(row=7, column=0, sticky="w", pady=4)
+            self.custom_message_entry.grid(row=7, column=1, sticky="ew", padx=(10, 0), pady=4)
         else:
             self.custom_message_label.grid_remove()
             self.custom_message_entry.grid_remove()
