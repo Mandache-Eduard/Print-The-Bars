@@ -4,6 +4,21 @@ import tkinter as tk
 class AppState:
     def __init__(self, root: tk.Misc) -> None:
         self.album_link_var = tk.StringVar(root)
+        self.album_validation_status_var = tk.StringVar(root, value="idle")
+        self.album_validation_message_var = tk.StringVar(root, value="")
+        self.album_loading_var = tk.BooleanVar(root, value=False)
+        self.album_metadata_version_var = tk.IntVar(root, value=0)
+        self.album_metadata: dict[str, object] = {
+            "title": "",
+            "artist": "",
+            "release_date": "",
+            "tracklist": [],
+            "cover_url": "",
+            "source_provider": "",
+            "source_id": "",
+            "validation_status": "idle",
+            "error_message": "",
+        }
         self.cover_image_path_var = tk.StringVar(root, value="")
         self.border_enabled_var = tk.BooleanVar(root, value=False)
         self.border_size_var = tk.IntVar(root, value=12)
@@ -29,4 +44,5 @@ class AppState:
             root,
             value="A3 29.7 x 42 cm | 11.7 x 16.5 inches",
         )
+        self.export_format_var = tk.StringVar(root, value="PNG")
 

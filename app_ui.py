@@ -147,6 +147,10 @@ class AlbumPosterAppUI:
         self.state.poster_size_var.trace_add("write", self._on_poster_size_change)
         self.state.margin_ratio_var.trace_add("write", self._on_margin_ratio_change)
         self.state.cover_image_path_var.trace_add("write", self._on_cover_image_change)
+        self.state.album_metadata_version_var.trace_add("write", self._on_album_metadata_change)
+        self.state.show_release_date_var.trace_add("write", self._on_album_metadata_change)
+        self.state.show_tracklist_var.trace_add("write", self._on_album_metadata_change)
+        self.state.tracklist_numbering_var.trace_add("write", self._on_album_metadata_change)
 
     def _on_poster_size_change(self, *_args: object) -> None:
         if hasattr(self, "preview_canvas"):
@@ -159,6 +163,67 @@ class AlbumPosterAppUI:
     def _on_cover_image_change(self, *_args: object) -> None:
         if hasattr(self, "preview_canvas"):
             self._redraw_preview(self.preview_canvas)
+
+    def _on_album_metadata_change(self, *_args: object) -> None:
+        if hasattr(self, "preview_canvas"):
+            self._redraw_preview(self.preview_canvas)
+
+    def _to_roman(self, number: int) -> str:
+        numerals = [
+            (1000, "M"),
+            (900, "CM"),
+            (500, "D"),
+            (400, "CD"),
+            (100, "C"),
+            (90, "XC"),
+            (50, "L"),
+            (40, "XL"),
+            (10, "X"),
+            (9, "IX"),
+            (5, "V"),
+            (4, "IV"),
+            (1, "I"),
+        ]
+        result = []
+        remainder = max(1, number)
+        for value, symbol in numerals:
+            while remainder >= value:
+                result.append(symbol)
+                remainder -= value
+        return "".join(result)
+
+    def _format_tracklist(self, tracks: list[str]) -> list[str]:
+        numbering = self.state.tracklist_numbering_var.get()
+        count = len(tracks)
+        if count == 0:
+            return []
+
+        if numbering == "Zero-padded numbers":
+            width = max(2, len(str(count)))
+            return [f"{index:0{width}d}. {title}" for index, title in enumerate(tracks, start=1)]
+        if numbering == "Roman numerals":
+            return [f"{self._to_roman(index)}. {title}" for index, title in enumerate(tracks, start=1)]
+        return [f"{index}. {title}" for index, title in enumerate(tracks, start=1)]
+
+    def _get_preview_text_data(self) -> tuple[str, str, list[str]]:
+        metadata = self.state.album_metadata if isinstance(self.state.album_metadata, dict) else {}
+
+        title = str(metadata.get("title") or "").strip() or "Album Title"
+        artist = str(metadata.get("artist") or "").strip() or "Artist Name"
+        release_date = str(metadata.get("release_date") or "").strip()
+
+        if self.state.show_release_date_var.get() and release_date:
+            subtitle = f"{artist} • {release_date}"
+        elif artist == "Artist Name":
+            subtitle = "Artist Name • Release Year"
+        else:
+            subtitle = artist
+
+        tracks = metadata.get("tracklist")
+        normalized_tracks: list[str] = []
+        if self.state.show_tracklist_var.get() and isinstance(tracks, list):
+            normalized_tracks = [track for track in tracks if isinstance(track, str) and track.strip()]
+        return title, subtitle, self._format_tracklist(normalized_tracks)
 
     def _get_selected_dimensions(self) -> tuple[str | None, str | None]:
         value = self.state.poster_size_var.get()
@@ -331,20 +396,41 @@ class AlbumPosterAppUI:
             cover_y2,
         )
 
+        title_text, subtitle_text, formatted_tracklist = self._get_preview_text_data()
         canvas.create_text(
             poster_center_x,
             cover_y2 + (poster_width * 0.18),
-            text="Album Title",
+            text=title_text,
             font=("Segoe UI", 22, "bold"),
             fill="#222222",
         )
+        subtitle_y = cover_y2 + (poster_width * 0.28)
         canvas.create_text(
             poster_center_x,
-            cover_y2 + (poster_width * 0.28),
-            text="Artist Name • Release Year",
+            subtitle_y,
+            text=subtitle_text,
             font=("Segoe UI", 13),
             fill="#666666",
         )
+
+        if formatted_tracklist:
+            start_y = subtitle_y + (poster_width * 0.08)
+            bottom_limit = poster_y2 - 24
+            line_height = max(16, int(poster_width * 0.038))
+            max_lines = max(0, int((bottom_limit - start_y) // line_height))
+            if max_lines > 0:
+                visible = formatted_tracklist[:max_lines]
+                if len(formatted_tracklist) > max_lines:
+                    visible[-1] = "..."
+                for index, track in enumerate(visible):
+                    canvas.create_text(
+                        poster_x1 + (poster_width * 0.08),
+                        start_y + (index * line_height),
+                        text=track,
+                        font=("Segoe UI", 10),
+                        fill="#444444",
+                        anchor="w",
+                    )
 
         width_text, height_text = self._get_selected_dimensions()
         if width_text is not None:
