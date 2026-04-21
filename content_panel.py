@@ -99,7 +99,7 @@ class ContentPanel:
         )
         self.certifications_entry.grid(row=6, column=1, sticky="ew", padx=(10, 0), pady=3)
 
-        ttk.Label(frame, text="Funny message").grid(
+        ttk.Label(frame, text="Personalized message").grid(
             row=7, column=0, sticky="w", pady=(10, 4)
         )
 

@@ -5,10 +5,12 @@ from tkinter import ttk
 
 try:
     from PIL import Image
+    from PIL import ImageOps
     from PIL import ImageTk
     from PIL import UnidentifiedImageError
 except ImportError:
     Image = None
+    ImageOps = None
     ImageTk = None
     UnidentifiedImageError = OSError
 
@@ -134,7 +136,7 @@ class AlbumPosterAppUI:
 
         self.preview_canvas = tk.Canvas(
             self.preview_frame,
-            bg="#f4f4f4",
+            bg="#808080",
             highlightthickness=1,
             highlightbackground="#cfcfcf",
         )
@@ -146,9 +148,11 @@ class AlbumPosterAppUI:
             lambda _event: self._redraw_preview(self.preview_canvas),
         )
         self.state.poster_size_var.trace_add("write", self._on_poster_size_change)
+        self.state.theme_var.trace_add("write", self._on_theme_change)
         self.state.margin_ratio_var.trace_add("write", self._on_margin_ratio_change)
         self.state.border_enabled_var.trace_add("write", self._on_margin_ratio_change)
         self.state.border_ratio_var.trace_add("write", self._on_margin_ratio_change)
+        self.state.monochrome_var.trace_add("write", self._on_cover_image_change)
         self.state.cover_image_path_var.trace_add("write", self._on_cover_image_change)
         self.state.album_metadata_version_var.trace_add("write", self._on_album_metadata_change)
         self.state.show_release_date_var.trace_add("write", self._on_album_metadata_change)
@@ -162,6 +166,10 @@ class AlbumPosterAppUI:
             self._redraw_preview(self.preview_canvas)
 
     def _on_margin_ratio_change(self, *_args: object) -> None:
+        if hasattr(self, "preview_canvas"):
+            self._redraw_preview(self.preview_canvas)
+
+    def _on_theme_change(self, *_args: object) -> None:
         if hasattr(self, "preview_canvas"):
             self._redraw_preview(self.preview_canvas)
 
@@ -343,6 +351,11 @@ class AlbumPosterAppUI:
         width_text = f"{width_cm} cm | {width_in} inches"
         height_text = f"{height_cm} cm | {height_in} inches"
         return width_text, height_text
+
+    def _get_theme_colors(self) -> tuple[str, str]:
+        if self.state.theme_var.get() == "Dark":
+            return "#111111", "#F5F4EF"
+        return "#F7F7F2", "#111111"
 
     def _wrap_text_to_width(self, text: str, font: tkfont.Font, max_width: float) -> list[str]:
         if not text:
@@ -672,6 +685,10 @@ class AlbumPosterAppUI:
                 with Image.open(path) as raw_image:
                     source_width, source_height = raw_image.size
                     image = raw_image.convert("RGB")
+                    if self.state.monochrome_var.get() and ImageOps is not None:
+                        image = ImageOps.grayscale(image)  # true grayscale, no autocontrast
+                    else:
+                        image = image.convert("RGB")
                     if source_width == source_height:
                         image = image.resize((target_width, target_height), Image.Resampling.LANCZOS)
                     else:
@@ -707,8 +724,8 @@ class AlbumPosterAppUI:
         canvas.delete("all")
 
         margin = 24
-        label_space_right = 155
-        label_space_bottom = 44
+        label_space_right = 190
+        label_space_bottom = 56
         drawable_x = margin
         drawable_y = margin
         drawable_width = max(width - (2 * margin) - label_space_right, 1)
@@ -723,6 +740,7 @@ class AlbumPosterAppUI:
         poster_center_x = (poster_x1 + poster_x2) / 2
         poster_height = poster_y2 - poster_y1
         poster_width = poster_x2 - poster_x1
+        poster_bg, poster_fg = self._get_theme_colors()
 
         try:
             margin_ratio = float(self.state.margin_ratio_var.get())
@@ -742,68 +760,13 @@ class AlbumPosterAppUI:
             poster_page,
         )
 
-        # Subtle edge shadows for depth without reducing label readability.
-        shadow_soft = "#e8e8e8"
-        shadow_deep = "#d9d9d9"
-
-        canvas.create_rectangle(
-            poster_x1 - 6,
-            poster_y1 + 4,
-            poster_x1,
-            poster_y2 + 8,
-            fill=shadow_soft,
-            outline="",
-        )
-        canvas.create_rectangle(
-            poster_x1 - 3,
-            poster_y1 + 2,
-            poster_x1,
-            poster_y2 + 6,
-            fill=shadow_deep,
-            outline="",
-        )
-
-        canvas.create_rectangle(
-            poster_x2,
-            poster_y1 + 4,
-            poster_x2 + 8,
-            poster_y2 + 8,
-            fill=shadow_soft,
-            outline="",
-        )
-        canvas.create_rectangle(
-            poster_x2,
-            poster_y1 + 2,
-            poster_x2 + 5,
-            poster_y2 + 6,
-            fill=shadow_deep,
-            outline="",
-        )
-
-        canvas.create_rectangle(
-            poster_x1 + 4,
-            poster_y2,
-            poster_x2 + 8,
-            poster_y2 + 8,
-            fill=shadow_soft,
-            outline="",
-        )
-        canvas.create_rectangle(
-            poster_x1 + 2,
-            poster_y2,
-            poster_x2 + 6,
-            poster_y2 + 5,
-            fill=shadow_deep,
-            outline="",
-        )
-
         canvas.create_rectangle(
             poster_x1,
             poster_y1,
             poster_x2,
             poster_y2,
-            fill="white",
-            outline="#bbbbbb",
+            fill=poster_bg,
+            outline=poster_fg,
             width=2,
         )
 
@@ -828,7 +791,7 @@ class AlbumPosterAppUI:
                     poster_y1,
                     poster_x2,
                     poster_y1 + inner_width,
-                    fill="#000000",
+                    fill=poster_fg,
                     outline="",
                 )
                 canvas.create_rectangle(
@@ -836,7 +799,7 @@ class AlbumPosterAppUI:
                     poster_y2 - inner_width,
                     poster_x2,
                     poster_y2,
-                    fill="#000000",
+                    fill=poster_fg,
                     outline="",
                 )
                 canvas.create_rectangle(
@@ -844,7 +807,7 @@ class AlbumPosterAppUI:
                     poster_y1 + inner_width,
                     poster_x1 + inner_width,
                     poster_y2 - inner_width,
-                    fill="#000000",
+                    fill=poster_fg,
                     outline="",
                 )
                 canvas.create_rectangle(
@@ -852,7 +815,7 @@ class AlbumPosterAppUI:
                     poster_y1 + inner_width,
                     poster_x2,
                     poster_y2 - inner_width,
-                    fill="#000000",
+                    fill=poster_fg,
                     outline="",
                 )
 
@@ -898,7 +861,7 @@ class AlbumPosterAppUI:
                     cursor_y,
                     text=line,
                     font=title_font,
-                    fill="#222222",
+                    fill=poster_fg,
                     anchor="n",
                 )
                 cursor_y += title_line_height
@@ -910,7 +873,7 @@ class AlbumPosterAppUI:
                     cursor_y,
                     text=line,
                     font=subtitle_font,
-                    fill="#666666",
+                    fill=poster_fg,
                     anchor="n",
                 )
                 cursor_y += subtitle_line_height
@@ -928,27 +891,28 @@ class AlbumPosterAppUI:
                             line_y,
                             text=line,
                             font=track_font,
-                            fill="#444444",
+                            fill=poster_fg,
                             anchor="nw",
                         )
                         line_y += track_line_height
 
         width_text, height_text = self._get_selected_dimensions()
+        dimension_color = "#FFFFFF"
         if width_text is not None:
             canvas.create_text(
                 poster_center_x,
                 poster_y2 + 28,
                 text=width_text,
-                font=("Segoe UI", 10),
-                fill="#444444",
+                font=("Segoe UI", 12, "bold"),
+                fill=dimension_color,
             )
         if height_text is not None:
             canvas.create_text(
                 poster_x2 + 22,
                 (poster_y1 + poster_y2) / 2,
                 text=height_text,
-                font=("Segoe UI", 10),
-                fill="#444444",
+                font=("Segoe UI", 12, "bold"),
+                fill=dimension_color,
                 anchor="w",
             )
 

@@ -139,6 +139,7 @@ class StylePanel:
             frame,
             text="Monochrome cover",
             variable=self.state.monochrome_var,
+            command=self._toggle_monochrome_cover,
         ).grid(row=2, column=0, columnspan=2, sticky="w", pady=6)
 
         ttk.Label(frame, text="Font").grid(row=3, column=0, sticky="w", pady=4)
@@ -244,4 +245,7 @@ class StylePanel:
         else:
             self.gradient_palette_frame.grid_remove()
 
+    def _toggle_monochrome_cover(self) -> None:
+        # Force downstream preview listeners to recompute the cover image treatment.
+        self.state.album_metadata_version_var.set(self.state.album_metadata_version_var.get() + 1)
 
