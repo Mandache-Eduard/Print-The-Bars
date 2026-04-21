@@ -766,8 +766,8 @@ class AlbumPosterAppUI:
             poster_x2,
             poster_y2,
             fill=poster_bg,
-            outline=poster_fg,
-            width=2,
+            outline=poster_fg if self.state.border_enabled_var.get() else "",
+            width=2 if self.state.border_enabled_var.get() else 0,
         )
 
         self._draw_cover_image_or_placeholder(
