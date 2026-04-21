@@ -13,13 +13,42 @@ APP_USER_AGENT = "PrintTheBars/1.0 (https://github.com/manda/Print-The-Bars)"
 REQUEST_TIMEOUT_SECONDS = 12
 
 MUSICBRAINZ_RELEASE_RE = re.compile(
-    r"/(?:release)/([0-9a-fA-F-]{36})(?:$|[/?#])"
+    r"/release/([0-9a-fA-F-]{36})(?:$|[/?#])"
 )
 MUSICBRAINZ_RELEASE_GROUP_RE = re.compile(
-    r"/(?:release-group)/([0-9a-fA-F-]{36})(?:$|[/?#])"
+    r"/release-group/([0-9a-fA-F-]{36})(?:$|[/?#])"
 )
 DISCOGS_RELEASE_RE = re.compile(r"/(?:release|releases)/(\d+)(?:$|[-/?#])")
 DISCOGS_MASTER_RE = re.compile(r"/(?:master|masters)/(\d+)(?:$|[-/?#])")
+FEATURE_FALLBACK_RE = re.compile(
+    r"(?:\(|\s)(?:feat\.?|ft\.?|featuring)\s+([^\)]+)(?:\)|$)",
+    flags=re.IGNORECASE,
+)
+
+MB_FEATURE_ROLE_KEYWORDS = ("vocal", "perform")
+DISCOGS_INCLUDE_ROLE_KEYWORDS = (
+    "vocal",
+    "vocals",
+    "singer",
+    "rap",
+    "mc",
+    "perform",
+    "guest",
+    "featured",
+    "featuring",
+    "backing vocal",
+)
+DISCOGS_EXCLUDE_ROLE_KEYWORDS = (
+    "producer",
+    "engineer",
+    "master",
+    "artwork",
+    "design",
+    "writer",
+    "written",
+    "composer",
+    "composed",
+)
 
 
 class SourcePanel:
@@ -256,7 +285,7 @@ class SourcePanel:
             if entity == "release":
                 endpoint = (
                     f"https://musicbrainz.org/ws/2/release/{source_id}"
-                    "?fmt=json&inc=artist-credits+recordings"
+                    "?fmt=json&inc=artist-credits+recordings+artist-rels+recording-level-rels"
                 )
                 release_json = self._fetch_json(endpoint)
                 return {
@@ -273,7 +302,7 @@ class SourcePanel:
                     "?fmt=json&inc=artist-credits+releases"
                 )
                 group_json = self._fetch_json(endpoint)
-                tracklist: list[str] = []
+                tracklist: list[dict[str, object]] = []
                 releases = group_json.get("releases") or []
                 if isinstance(releases, list) and releases:
                     first_release_id = ""
@@ -294,11 +323,11 @@ class SourcePanel:
             return {}
         return {}
 
-    def _musicbrainz_release_tracklist(self, release_id: str) -> list[str]:
+    def _musicbrainz_release_tracklist(self, release_id: str) -> list[dict[str, object]]:
         try:
             endpoint = (
                 f"https://musicbrainz.org/ws/2/release/{release_id}"
-                "?fmt=json&inc=recordings"
+                "?fmt=json&inc=artist-credits+recordings+artist-rels+recording-level-rels"
             )
             release_json = self._fetch_json(endpoint)
             return self._musicbrainz_tracklist(release_json)
@@ -318,11 +347,13 @@ class SourcePanel:
                     names.append(item["artist"]["name"])
         return " & ".join(names)
 
-    def _musicbrainz_tracklist(self, payload: dict[str, object]) -> list[str]:
+    def _musicbrainz_tracklist(self, payload: dict[str, object]) -> list[dict[str, object]]:
         media = payload.get("media")
         if not isinstance(media, list):
             return []
-        tracks: list[str] = []
+        album_artist = self._musicbrainz_artist_name(payload)
+        album_artist_ids = self._musicbrainz_album_artist_ids(payload)
+        tracks: list[dict[str, object]] = []
         for medium in media:
             if not isinstance(medium, dict):
                 continue
@@ -330,20 +361,52 @@ class SourcePanel:
             if not isinstance(medium_tracks, list):
                 continue
             for track in medium_tracks:
-                if isinstance(track, dict) and isinstance(track.get("title"), str):
-                    tracks.append(track["title"].strip())
-        return [track for track in tracks if track]
+                if not isinstance(track, dict):
+                    continue
+                title = track.get("title")
+                if not isinstance(title, str) or not title.strip():
+                    continue
+                recording = track.get("recording")
+                features: list[str] = []
+                if isinstance(recording, dict):
+                    features = self._musicbrainz_featured_artists(
+                        recording,
+                        album_artist,
+                        album_artist_ids,
+                    )
+                tracks.append(
+                    {
+                        "title": title.strip(),
+                        "featured_artists": features,
+                    }
+                )
+        return tracks
+
+    def _musicbrainz_album_artist_ids(self, payload: dict[str, object]) -> set[str]:
+        credit = payload.get("artist-credit")
+        if not isinstance(credit, list):
+            return set()
+
+        ids: set[str] = set()
+        for item in credit:
+            if not isinstance(item, dict):
+                continue
+            artist = item.get("artist")
+            if isinstance(artist, dict) and isinstance(artist.get("id"), str):
+                ids.add(artist["id"].strip())
+        return ids
 
     def _fetch_discogs(self, entity: str, source_id: str) -> dict[str, object]:
         try:
             if entity == "release":
                 endpoint = f"https://api.discogs.com/releases/{source_id}"
                 release_json = self._fetch_json(endpoint)
+                album_artist = self._discogs_artist_name(release_json)
                 return {
                     "title": release_json.get("title", ""),
-                    "artist": self._discogs_artist_name(release_json),
+                    "artist": album_artist,
                     "release_date": release_json.get("released", "") or release_json.get("year", ""),
-                    "tracklist": self._discogs_tracklist(release_json),
+                    "tracklist": self._discogs_tracklist(release_json, album_artist),
                     "cover_url": self._discogs_cover_url(release_json),
                 }
 
@@ -351,7 +414,8 @@ class SourcePanel:
                 endpoint = f"https://api.discogs.com/masters/{source_id}"
                 master_json = self._fetch_json(endpoint)
                 release_date = master_json.get("year", "")
-                tracklist = self._discogs_tracklist(master_json)
+                album_artist = self._discogs_artist_name(master_json)
+                tracklist = self._discogs_tracklist(master_json, album_artist)
                 cover_url = self._discogs_cover_url(master_json)
 
                 main_release = master_json.get("main_release")
@@ -360,13 +424,13 @@ class SourcePanel:
                     if not release_date:
                         release_date = release_json.get("released", "") or release_json.get("year", "")
                     if not tracklist:
-                        tracklist = self._discogs_tracklist(release_json)
+                        tracklist = self._discogs_tracklist(release_json, album_artist)
                     if not cover_url:
                         cover_url = self._discogs_cover_url(release_json)
 
                 return {
                     "title": master_json.get("title", ""),
-                    "artist": self._discogs_artist_name(master_json),
+                    "artist": album_artist,
                     "release_date": release_date,
                     "tracklist": tracklist,
                     "cover_url": cover_url,
@@ -387,19 +451,30 @@ class SourcePanel:
                     names.append(clean)
         return " & ".join(names)
 
-    def _discogs_tracklist(self, payload: dict[str, object]) -> list[str]:
+    def _discogs_tracklist(
+        self,
+        payload: dict[str, object],
+        album_artist: str,
+    ) -> list[dict[str, object]]:
         raw_tracklist = payload.get("tracklist")
         if not isinstance(raw_tracklist, list):
             return []
-        tracks: list[str] = []
+        tracks: list[dict[str, object]] = []
         for entry in raw_tracklist:
             if not isinstance(entry, dict):
                 continue
             if entry.get("type_") not in {None, "track"}:
                 continue
             title = entry.get("title")
-            if isinstance(title, str) and title.strip():
-                tracks.append(title.strip())
+            if not isinstance(title, str) or not title.strip():
+                continue
+            features = self._discogs_featured_artists(entry, album_artist)
+            tracks.append(
+                {
+                    "title": title.strip(),
+                    "featured_artists": features,
+                }
+            )
         return tracks
 
     def _discogs_cover_url(self, payload: dict[str, object]) -> str:
@@ -413,6 +488,172 @@ class SourcePanel:
                     return image["uri"]
         return ""
 
+    def _musicbrainz_featured_artists(
+        self,
+        recording: dict[str, object],
+        album_artist: str,
+        album_artist_ids: set[str],
+    ) -> list[str]:
+        relations = recording.get("relations")
+        if not isinstance(relations, list):
+            return []
+
+        candidates: list[dict[str, str]] = []
+        for relation in relations:
+            if not isinstance(relation, dict):
+                continue
+
+            target_type = str(relation.get("target-type") or "").strip().lower()
+            if target_type and target_type != "artist":
+                continue
+
+            rel_type = str(relation.get("type") or "").strip().lower()
+            attributes = relation.get("attributes")
+            rel_attributes = [
+                str(attribute).strip().lower()
+                for attribute in attributes
+                if isinstance(attribute, str)
+            ] if isinstance(attributes, list) else []
+
+            role_matches = any(keyword in rel_type for keyword in MB_FEATURE_ROLE_KEYWORDS) or any(
+                any(keyword in attribute for keyword in MB_FEATURE_ROLE_KEYWORDS)
+                for attribute in rel_attributes
+            )
+            if not role_matches:
+                continue
+
+            artist = relation.get("artist")
+            if not isinstance(artist, dict):
+                continue
+            artist_name = artist.get("name")
+            if not isinstance(artist_name, str) or not artist_name.strip():
+                continue
+            artist_id = ""
+            if isinstance(artist.get("id"), str):
+                artist_id = artist["id"].strip()
+            candidates.append(
+                {
+                    "id": artist_id,
+                    "name": artist_name.strip(),
+                }
+            )
+
+        album_keys = self._split_artist_keys(album_artist)
+        seen_ids: set[str] = set()
+        seen_keys: set[str] = set()
+        result: list[str] = []
+        for candidate in candidates:
+            candidate_name = candidate["name"]
+            candidate_id = candidate["id"]
+            clean = re.sub(r"\s*\(\d+\)$", "", candidate_name).strip()
+            if not clean:
+                continue
+            key = self._artist_key(clean)
+            if not key:
+                continue
+            if candidate_id and candidate_id in album_artist_ids:
+                continue
+            if candidate_id and candidate_id in seen_ids:
+                continue
+            if key in album_keys or key in seen_keys:
+                continue
+
+            if candidate_id:
+                seen_ids.add(candidate_id)
+            seen_keys.add(key)
+            result.append(clean)
+        return result
+
+    def _discogs_featured_artists(
+        self,
+        entry: dict[str, object],
+        album_artist: str,
+    ) -> list[str]:
+        candidates: list[str] = []
+
+        artists = entry.get("artists")
+        if isinstance(artists, list):
+            for artist in artists:
+                if not isinstance(artist, dict):
+                    continue
+                if isinstance(artist.get("name"), str):
+                    candidates.append(artist["name"])
+
+        structured_found = False
+        extraartists = entry.get("extraartists")
+        if isinstance(extraartists, list):
+            for artist in extraartists:
+                if not isinstance(artist, dict):
+                    continue
+                role_text = str(artist.get("role") or "").lower()
+                if not role_text:
+                    continue
+                role_chunks = [chunk.strip() for chunk in role_text.replace(";", ",").split(",") if chunk.strip()]
+                include = any(
+                    any(keyword in chunk for keyword in DISCOGS_INCLUDE_ROLE_KEYWORDS)
+                    for chunk in role_chunks
+                )
+                exclude = any(
+                    any(keyword in chunk for keyword in DISCOGS_EXCLUDE_ROLE_KEYWORDS)
+                    for chunk in role_chunks
+                )
+                if include and not exclude and isinstance(artist.get("name"), str):
+                    structured_found = True
+                    candidates.append(artist["name"])
+
+        filtered = self._dedupe_and_filter_features(candidates, album_artist)
+        if structured_found or filtered:
+            return filtered
+
+        title = entry.get("title")
+        if not isinstance(title, str):
+            return []
+        fallback_candidates = self._extract_features_from_title(title)
+        return self._dedupe_and_filter_features(fallback_candidates, album_artist)
+
+    def _extract_features_from_title(self, title: str) -> list[str]:
+        match = FEATURE_FALLBACK_RE.search(title)
+        if not match:
+            return []
+        raw = match.group(1).strip()
+        if not raw:
+            return []
+        raw = re.sub(r"\s+(?:with|and)\s+", ",", raw, flags=re.IGNORECASE)
+        raw = raw.replace("&", ",")
+        parts = [part.strip() for part in raw.split(",") if part.strip()]
+        return parts
+
+    def _dedupe_and_filter_features(
+        self,
+        candidates: list[str],
+        album_artist: str,
+    ) -> list[str]:
+        album_keys = self._split_artist_keys(album_artist)
+        seen: set[str] = set()
+        result: list[str] = []
+        for candidate in candidates:
+            clean = re.sub(r"\s*\(\d+\)$", "", candidate).strip()
+            if not clean:
+                continue
+            key = self._artist_key(clean)
+            if not key or key in album_keys or key in seen:
+                continue
+            seen.add(key)
+            result.append(clean)
+        return result
+
+    def _split_artist_keys(self, artist_text: str) -> set[str]:
+        if not artist_text:
+            return set()
+        parts = re.split(r"\s*(?:,|&| and )\s*", artist_text, flags=re.IGNORECASE)
+        keys = {self._artist_key(part) for part in parts if part.strip()}
+        return {key for key in keys if key}
+
+    def _artist_key(self, value: str) -> str:
+        normalized = re.sub(r"\s+", " ", value.lower()).strip()
+        normalized = re.sub(r"[^a-z0-9 ]", "", normalized)
+        return normalized
+
     def _pick_text(self, value: object) -> str:
         if isinstance(value, str):
             return value.strip()
@@ -420,13 +661,36 @@ class SourcePanel:
             return str(value)
         return ""
 
-    def _normalize_tracklist(self, value: object) -> list[str]:
+    def _normalize_tracklist(self, value: object) -> list[dict[str, object]]:
         if not isinstance(value, list):
             return []
-        normalized = []
+        normalized: list[dict[str, object]] = []
         for item in value:
-            if isinstance(item, str) and item.strip():
-                normalized.append(item.strip())
+            if isinstance(item, dict):
+                title = item.get("title")
+                if not isinstance(title, str) or not title.strip():
+                    continue
+                artists = item.get("featured_artists")
+                featured_artists: list[str] = []
+                if isinstance(artists, list):
+                    featured_artists = [
+                        artist.strip()
+                        for artist in artists
+                        if isinstance(artist, str) and artist.strip()
+                    ]
+                normalized.append(
+                    {
+                        "title": title.strip(),
+                        "featured_artists": featured_artists,
+                    }
+                )
+            elif isinstance(item, str) and item.strip():
+                normalized.append(
+                    {
+                        "title": item.strip(),
+                        "featured_artists": [],
+                    }
+                )
         return normalized
 
     def _extract_discogs_hint(self, path: str) -> str:

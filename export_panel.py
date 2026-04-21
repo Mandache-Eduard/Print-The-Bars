@@ -167,14 +167,6 @@ def _render_poster_image(state: AppState, dpi: int = DEFAULT_EXPORT_DPI):
     image = Image.new("RGBA", (output_width, output_height), "white")
     draw = ImageDraw.Draw(image)
 
-    # Soft shadow to match the preview.
-    draw.rectangle([poster_page.x - 6, poster_page.y + 4, poster_page.x, poster_page.y + poster_page.height + 8], fill="#e8e8e8")
-    draw.rectangle([poster_page.x - 3, poster_page.y + 2, poster_page.x, poster_page.y + poster_page.height + 6], fill="#d9d9d9")
-    draw.rectangle([poster_page.x + poster_page.width, poster_page.y + 4, poster_page.x + poster_page.width + 8, poster_page.y + poster_page.height + 8], fill="#e8e8e8")
-    draw.rectangle([poster_page.x + poster_page.width, poster_page.y + 2, poster_page.x + poster_page.width + 5, poster_page.y + poster_page.height + 6], fill="#d9d9d9")
-    draw.rectangle([poster_page.x + 4, poster_page.y + poster_page.height, poster_page.x + poster_page.width + 8, poster_page.y + poster_page.height + 8], fill="#e8e8e8")
-    draw.rectangle([poster_page.x + 2, poster_page.y + poster_page.height, poster_page.x + poster_page.width + 6, poster_page.y + poster_page.height + 5], fill="#d9d9d9")
-
     draw.rectangle(
         [poster_page.x, poster_page.y, poster_page.x + poster_page.width, poster_page.y + poster_page.height],
         fill="white",
@@ -211,6 +203,21 @@ def _render_poster_image(state: AppState, dpi: int = DEFAULT_EXPORT_DPI):
                 "#555555",
             )
 
+    if state.border_enabled_var.get():
+        border_ratio = min(0.05, max(0.0, float(state.border_ratio_var.get())))
+        border_width = max(1, round(poster_page.short_side * border_ratio)) if border_ratio > 0 else 0
+        if border_width > 0:
+            inner_width = min(border_width, round(poster_page.width / 2), round(poster_page.height / 2))
+            left = poster_page.x
+            top = poster_page.y
+            right = poster_page.x + poster_page.width
+            bottom = poster_page.y + poster_page.height
+            # Draw inset strips so border thickness grows inward only.
+            draw.rectangle([left, top, right, top + inner_width], fill="#000000")
+            draw.rectangle([left, bottom - inner_width, right, bottom], fill="#000000")
+            draw.rectangle([left, top + inner_width, left + inner_width, bottom - inner_width], fill="#000000")
+            draw.rectangle([right - inner_width, top + inner_width, right, bottom - inner_width], fill="#000000")
+
     title_font = _load_preview_font(max(18, round(output_width * 0.035)), bold=True)
     subtitle_font = _load_preview_font(max(12, round(output_width * 0.019)), bold=False)
     if title_font is not None:
@@ -237,12 +244,6 @@ def _render_poster_svg(state: AppState, dpi: int = DEFAULT_EXPORT_DPI) -> str:
 
     svg_parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{output_width}" height="{output_height}" viewBox="0 0 {output_width} {output_height}">',
-        f'<rect x="{poster_page.x - 6}" y="{poster_page.y + 4}" width="6" height="{poster_page.height + 4}" fill="#e8e8e8" />',
-        f'<rect x="{poster_page.x - 3}" y="{poster_page.y + 2}" width="3" height="{poster_page.height + 4}" fill="#d9d9d9" />',
-        f'<rect x="{poster_page.x + poster_page.width}" y="{poster_page.y + 4}" width="8" height="{poster_page.height + 4}" fill="#e8e8e8" />',
-        f'<rect x="{poster_page.x + poster_page.width}" y="{poster_page.y + 2}" width="5" height="{poster_page.height + 4}" fill="#d9d9d9" />',
-        f'<rect x="{poster_page.x + 4}" y="{poster_page.y + poster_page.height}" width="{poster_page.width + 4}" height="8" fill="#e8e8e8" />',
-        f'<rect x="{poster_page.x + 2}" y="{poster_page.y + poster_page.height}" width="{poster_page.width + 4}" height="5" fill="#d9d9d9" />',
         f'<rect x="{poster_page.x}" y="{poster_page.y}" width="{poster_page.width}" height="{poster_page.height}" fill="white" stroke="#bbbbbb" stroke-width="2" />',
     ]
     if cover_uri:
@@ -256,6 +257,18 @@ def _render_poster_svg(state: AppState, dpi: int = DEFAULT_EXPORT_DPI) -> str:
         svg_parts.append(
             f'<text x="{(cover_x1 + cover_x2) / 2}" y="{(cover_y1 + cover_y2) / 2}" text-anchor="middle" dominant-baseline="middle" font-family="Segoe UI, Arial, sans-serif" font-size="{max(12, round(output_width * 0.02))}" fill="#555555">Album Cover</text>'
         )
+    if state.border_enabled_var.get():
+        border_ratio = min(0.05, max(0.0, float(state.border_ratio_var.get())))
+        border_width = max(1, round(poster_page.short_side * border_ratio)) if border_ratio > 0 else 0
+        if border_width > 0:
+            inset = border_width / 2
+            border_x = poster_page.x + inset
+            border_y = poster_page.y + inset
+            border_w = max(1.0, poster_page.width - border_width)
+            border_h = max(1.0, poster_page.height - border_width)
+            svg_parts.append(
+                f'<rect x="{border_x}" y="{border_y}" width="{border_w}" height="{border_h}" fill="none" stroke="#000000" stroke-width="{border_width}" />'
+            )
     svg_parts.append(
         f'<text x="{poster_page.x + (poster_page.width / 2)}" y="{cover_y2 + (poster_page.short_side * 0.11)}" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="{max(18, round(output_width * 0.035))}" font-weight="700" fill="#222222">Album Title</text>'
     )

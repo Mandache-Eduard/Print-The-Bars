@@ -27,8 +27,13 @@ class FittedPage:
 
 
 def validate_margin_ratio(margin_ratio: float) -> None:
-    if not 0 <= margin_ratio < 0.5:
-        raise ValueError("margin_ratio must satisfy 0 <= margin_ratio < 0.5")
+    if not 0.05 <= margin_ratio <= 0.15:
+        raise ValueError("margin_ratio must satisfy 0.05 <= margin_ratio <= 0.15")
+
+
+def validate_border_ratio(border_ratio: float) -> None:
+    if not 0.00 <= border_ratio <= 0.05:
+        raise ValueError("border_ratio must satisfy 0.00 <= border_ratio <= 0.05")
 
 
 def build_square_layout(margin_ratio: float) -> NormalizedSquareLayout:
@@ -87,6 +92,7 @@ class StylePanel:
         self.state = state
         self.bind_mousewheel_recursive = bind_mousewheel_recursive
         self.border_controls_frame: ttk.Frame | None = None
+        self.border_ratio_value_var = tk.StringVar(value=f"{self.state.border_ratio_var.get():.3f}")
         self.margin_ratio_value_var = tk.StringVar(value=f"{self.state.margin_ratio_var.get():.2f}")
         self.gradient_palette_frame: ttk.Frame | None = None
 
@@ -116,16 +122,17 @@ class StylePanel:
 
         ttk.Scale(
             self.border_controls_frame,
-            from_=0,
-            to=100,
-            variable=self.state.border_size_var,
+            from_=0.00,
+            to=0.05,
+            variable=self.state.border_ratio_var,
             orient="horizontal",
+            command=self._on_border_ratio_change,
         ).grid(row=0, column=0, sticky="ew")
 
         ttk.Label(
             self.border_controls_frame,
-            textvariable=self.state.border_size_var,
-            width=4,
+            textvariable=self.border_ratio_value_var,
+            width=6,
         ).grid(row=0, column=1, padx=(8, 0))
 
         ttk.Checkbutton(
@@ -156,8 +163,8 @@ class StylePanel:
 
         ttk.Scale(
             margin_controls,
-            from_=0.0,
-            to=0.49,
+            from_=0.05,
+            to=0.15,
             variable=self.state.margin_ratio_var,
             orient="horizontal",
             command=self._on_margin_ratio_change,
@@ -193,6 +200,7 @@ class StylePanel:
             swatch.grid(row=0, column=index, padx=3)
 
         self._toggle_border_controls()
+        self._on_border_ratio_change(str(self.state.border_ratio_var.get()))
         self._on_margin_ratio_change(str(self.state.margin_ratio_var.get()))
         self._toggle_gradient_palette()
         self.bind_mousewheel_recursive(frame)
@@ -200,14 +208,26 @@ class StylePanel:
 
     def _on_margin_ratio_change(self, value: str) -> None:
         try:
-            ratio = float(value)
+            ratio = round(min(0.15, max(0.05, float(value))), 2)
             validate_margin_ratio(ratio)
+            self.state.margin_ratio_var.set(ratio)
             normalized_square = build_square_layout(ratio)
             self.margin_ratio_value_var.set(f"{normalized_square.x:.2f}")
         except (ValueError, tk.TclError):
             fallback = 0.12
             self.state.margin_ratio_var.set(fallback)
             self.margin_ratio_value_var.set(f"{fallback:.2f}")
+
+    def _on_border_ratio_change(self, value: str) -> None:
+        try:
+            ratio = round(min(0.05, max(0.00, float(value))), 3)
+            validate_border_ratio(ratio)
+            self.state.border_ratio_var.set(ratio)
+            self.border_ratio_value_var.set(f"{ratio:.3f}")
+        except (ValueError, tk.TclError):
+            fallback = 0.01
+            self.state.border_ratio_var.set(fallback)
+            self.border_ratio_value_var.set(f"{fallback:.3f}")
 
     def _toggle_border_controls(self) -> None:
         if self.border_controls_frame is None:

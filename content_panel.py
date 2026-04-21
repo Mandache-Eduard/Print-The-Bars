@@ -14,6 +14,7 @@ class ContentPanel:
         self.parent = parent
         self.state = state
         self.bind_mousewheel_recursive = bind_mousewheel_recursive
+        self.release_date_options_frame: ttk.Frame | None = None
         self.tracklist_options_frame: ttk.Frame | None = None
         self.certifications_entry: ttk.Entry | None = None
         self.custom_message_label: ttk.Label | None = None
@@ -28,18 +29,44 @@ class ContentPanel:
             frame,
             text="Show release date",
             variable=self.state.show_release_date_var,
+            command=self._toggle_release_date_options,
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=3)
+
+        self.release_date_options_frame = ttk.Frame(frame)
+        self.release_date_options_frame.grid(
+            row=1, column=0, columnspan=2, sticky="ew", padx=(24, 0), pady=(0, 6)
+        )
+        self.release_date_options_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(self.release_date_options_frame, text="Date format").grid(
+            row=0, column=0, sticky="w", pady=2
+        )
+        ttk.Combobox(
+            self.release_date_options_frame,
+            textvariable=self.state.release_date_format_var,
+            values=[
+                "DD/MM/YYYY",
+                "DD-MM-YYYY",
+                "DD.MM.YYYY",
+                "DD Month YYYY",
+                "MM/DD/YYYY",
+                "MM-DD-YYYY",
+                "MM.DD.YYYY",
+                "Month DD, YYYY",
+            ],
+            state="readonly",
+        ).grid(row=0, column=1, sticky="ew", padx=(10, 0), pady=2)
 
         ttk.Checkbutton(
             frame,
             text="Show tracklist",
             variable=self.state.show_tracklist_var,
             command=self._toggle_tracklist_options,
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=3)
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=3)
 
         self.tracklist_options_frame = ttk.Frame(frame)
         self.tracklist_options_frame.grid(
-            row=2, column=0, columnspan=2, sticky="ew", padx=(24, 0), pady=(0, 6)
+            row=3, column=0, columnspan=2, sticky="ew", padx=(24, 0), pady=(0, 6)
         )
         self.tracklist_options_frame.columnconfigure(1, weight=1)
 
@@ -57,23 +84,23 @@ class ContentPanel:
             frame,
             text="Show featured artists",
             variable=self.state.show_features_var,
-        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=3)
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=3)
 
         ttk.Checkbutton(
             frame,
             text="Show certifications",
             variable=self.state.show_certifications_var,
             command=self._toggle_certifications_entry,
-        ).grid(row=5, column=0, sticky="w", pady=3)
+        ).grid(row=6, column=0, sticky="w", pady=3)
 
         self.certifications_entry = ttk.Entry(
             frame,
             textvariable=self.state.certifications_link_var,
         )
-        self.certifications_entry.grid(row=5, column=1, sticky="ew", padx=(10, 0), pady=3)
+        self.certifications_entry.grid(row=6, column=1, sticky="ew", padx=(10, 0), pady=3)
 
         ttk.Label(frame, text="Funny message").grid(
-            row=6, column=0, sticky="w", pady=(10, 4)
+            row=7, column=0, sticky="w", pady=(10, 4)
         )
 
         message_menu = ttk.Combobox(
@@ -89,12 +116,13 @@ class ContentPanel:
             ],
             state="readonly",
         )
-        message_menu.grid(row=6, column=1, sticky="ew", padx=(10, 0), pady=(10, 4))
+        message_menu.grid(row=7, column=1, sticky="ew", padx=(10, 0), pady=(10, 4))
         message_menu.bind("<<ComboboxSelected>>", self._on_message_selected)
 
         self.custom_message_label = ttk.Label(frame, text="Custom text")
         self.custom_message_entry = ttk.Entry(frame, textvariable=self.state.custom_message_var)
 
+        self._toggle_release_date_options()
         self._toggle_tracklist_options()
         self._toggle_certifications_entry()
         self._toggle_custom_message()
@@ -112,6 +140,14 @@ class ContentPanel:
         else:
             self.tracklist_options_frame.grid_remove()
 
+    def _toggle_release_date_options(self) -> None:
+        if self.release_date_options_frame is None:
+            return
+        if self.state.show_release_date_var.get():
+            self.release_date_options_frame.grid()
+        else:
+            self.release_date_options_frame.grid_remove()
+
     def _toggle_certifications_entry(self) -> None:
         if self.certifications_entry is None:
             return
@@ -123,8 +159,8 @@ class ContentPanel:
         if self.custom_message_label is None or self.custom_message_entry is None:
             return
         if self.state.message_var.get() == "Custom":
-            self.custom_message_label.grid(row=7, column=0, sticky="w", pady=4)
-            self.custom_message_entry.grid(row=7, column=1, sticky="ew", padx=(10, 0), pady=4)
+            self.custom_message_label.grid(row=8, column=0, sticky="w", pady=4)
+            self.custom_message_entry.grid(row=8, column=1, sticky="ew", padx=(10, 0), pady=4)
         else:
             self.custom_message_label.grid_remove()
             self.custom_message_entry.grid_remove()
